@@ -1,0 +1,307 @@
+#!/bin/bash
+ 
+$PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin"
+source /etc/environment && export PATH
+ 
+# Changes root and admin password
+echo "Cf6nAfqwG" | passwd --stdin root
+ 
+# Logs baseline information about the sever before configuration.
+mkdir /root/initial/
+top > /root/initial/top.log
+ps -aux > /root/initial/ps.log
+netstat -nap > /root/initial/netstat.log
+uptime > /root/initial/uptime.log
+free -h > /root/initial/freemem.log
+df -h > /root/initial/drivespace-beforebackup.log
+iptables -L > /root/initial/iptables.log
+ 
+# Backup the /etc and /var directories.
+mkdir /root/backup/
+cp -r /etc/ /root/backup/
+cp -r /var/ /root/backup/
+ 
+# Logs the size of the machine now that the drive backup has been done (since this will obviously increase the size of the drive).
+df -h > /root/initial/drivespace-afterBackup.log
+ 
+ 
+ 
+ 
+ 
+# Disable IPv6
+sysctl -w net.ipv6.conf.all.disable_ipv6=1
+sysctl -w net.ipv6.conf.default.disable_ipv6=1
+ 
+#### Setup Firewall rules ####
+# Clear all existing rules
+iptables -F
+ 
+# Set default action to drop packets
+iptables -P FORWARD DROP
+iptables -P OUTPUT DROP
+iptables -P INPUT DROP
+ 
+# Create table for blacklist
+iptables -N BLACKLIST
+iptables -A BLACKLIST -m recent --remove
+iptables -A BLACKLIST -m recent --name blacklist --set
+iptables -A BLACKLIST -j LOG --log-prefix "Blacklist Blocked: "
+ 
+#####SETUP INBOUND RULES ######
+# Allow local traffic
+iptables -A INPUT -i lo -j ACCEPT
+ 
+# Allow all traffic already established
+iptables -A INPUT -m state --state established,related -j ACCEPT
+ 
+# Allow HTTPS traffic
+iptables -A INPUT -p tcp --dport 443 -m state --state new -j ACCEPT
+ 
+# Allow Email services
+iptables -A INPUT -p tcp --dport 25 -m state --state new -j ACCEPT
+iptables -A INPUT -p tcp --dport 110 -m state --state new -j ACCEPT
+iptables -A INPUT -p tcp --dport 995 -m state --state new -j ACCEPT
+ 
+# Allow ping with limits
+iptables -A INPUT -p icmp -m limit --limit 3/sec -j ACCEPT
+ 
+# Flag excessive pings as flood attack
+iptables -A INPUT -p icmp -m limit --limit 1/minute -j LOG --log-prefix "ICMP Flood: "
+ 
+# Prevent SYN packet attacks
+iptables -A INPUT -p tcp ! --syn -m state --state NEW -m limit --limit 1/min -j LOG --log-prefix "SYN packet flood: "
+iptables -A INPUT -p tcp ! --syn -m state --state NEW -j DROP
+ 
+# Prevent fragmented packets
+iptables -A INPUT -f -m limit --limit 1/min -j LOG --log-prefix "Fragmented packet: "
+iptables -A INPUT -f -j DROP
+ 
+# Prevent XMAS attacks
+iptables -A INPUT -p tcp --tcp-flags ALL ALL -m limit --limit 1/min -j LOG --log-prefix "XMAS packet: "
+iptables -A INPUT -p tcp --tcp-flags ALL ALL -j DROP
+ 
+# Prevent NULL attacks
+iptables -A INPUT -p tcp --tcp-flags ALL NONE -m limit --limit 1/min -j LOG --log-prefix "NULL packet: "
+iptables -A INPUT -p tcp --tcp-flags ALL NONE -j DROP
+ 
+# Drop packets from blacklisted IP for 10 minutes
+iptables -A INPUT -m recent --rcheck --name blacklist --seconds 600 -j DROP
+ 
+# Remember all IP connections and send excessive requests to blacklist
+iptables -A INPUT -m state --state NEW -m recent --set
+iptables -A INPUT ! -s 172.20.240.0/22 -m recent --update --seconds 10 --hitcount 20 -j BLACKLIST
+ 
+ 
+ 
+### LOCALHOST ###
+# Allow local traffic
+iptables -A OUTPUT -o lo -j ACCEPT
+ 
+ 
+ 
+### OUTBOUND BLOCKING ###
+# Allow all traffic already established
+iptables -A OUTPUT -m state --state established,related -j ACCEPT
+   
+# Allow ping out (with restrictions)
+iptables -A OUTPUT -p icmp -m limit --limit 2/sec -j ACCEPT
+ 
+# Allow HTTP traffic out
+iptables -A OUTPUT -p tcp --dport 80 -m state --state new -j ACCEPT
+ 
+# Allow HTTPS traffic out.
+iptables -A OUTPUT -p tcp --dport 443 -m state --state new -j ACCEPT
+ 
+# Allow DNS traffic out.
+iptables -A OUTPUT -p udp --dport 53 -m state --state new -j ACCEPT
+ 
+# Allow NTP traffic out.
+iptables -A OUTPUT -p udp --dport 123 -d 172.20.242.200 -m state --state new -j ACCEPT
+ 
+# Allow rsyslog traffic out to send logs.
+iptables -A OUTPUT -p udp --dport 514 -d 172.20.241.20 -m state --state new -j ACCEPT
+ 
+# Allow MySQL traffic out.
+iptables -A OUTPUT -p tcp --dport 2862 -d 172.20.240.20 -j ACCEPT
+ 
+# Allow Email services out.
+iptables -A OUTPUT -p tcp --dport 25 -m state --state new -j ACCEPT
+iptables -A OUTPUT -p tcp --dport 110 -m state --state new -j ACCEPT
+iptables -A OUTPUT -p tcp --dport 995 -m state --state new -j ACCEPT
+ 
+# Allow LDAP traffic.
+iptables -A OUTPUT -p tcp --dport 389 -d 172.20.242.200 -j ACCEPT
+iptables -A OUTPUT -p udp --dport 389 -d 172.20.242.200 -j ACCEPT
+iptables -A OUTPUT -p tcp --dport 636 -d 172.20.242.200 -j ACCEPT
+iptables -A OUTPUT -p udp --dport 636 -d 172.20.242.200 -j ACCEPT
+ 
+# Log everything else about to be dropped.
+iptables -A OUTPUT -m limit --limit 2/min -j LOG --log-prefix "Output-Dropped: " --log-level 4
+iptables -A INPUT -m limit --limit 2/min -j LOG --log-prefix "Input-Dropped: " --log-level 4
+iptables -A FORWARD -m limit --limit 2/min -j LOG --log-prefix "Forward-Dropped: " --log-level 4
+ 
+# Saves the IPtables.
+iptables-save > /etc/iptables
+ 
+# (Re)starts the firewall service.
+systemctl restart firewalld
+systemctl start firewalld
+systemctl enable firewalld
+ 
+ 
+ 
+ 
+ 
+# Lock the /etc/shadow file.
+chmod 0000 /etc/shadow
+ 
+# Stops unnecessary services.
+/etc/init.d/atd stop
+/etc/init.d/bluetooth stop
+/etc/init.d/cron stop
+/etc/init.d/cups stop
+/etc/init.d/nfs-common stop
+/etc/init.d/ssh stop
+/etc/init.d/portmap stop
+/etc/init.d/pulseaudio stop
+/etc/init.d/avahi-daemon stop
+/etc/init.d/anacron stop
+ 
+# Removes all cron jobs
+rm -rf /var/spool/cron/*
+ 
+ 
+ 
+# Sets the NTP server and sets the server to be in the central timezone.
+yum -y upgrade ntp
+touch /etc/ntp.local
+echo "server 172.20.242.200 prefer" > /etc/ntp.local
+timedatectl set-timezone America/Chicago
+timedatectl set-ntp yes
+ 
+# Restarts and starts NTPd service at system startup.
+systemctl restart ntpd.service
+systemctl enable ntpd.service
+systemctl start ntpd.service
+ 
+ 
+ 
+# Forwards rsyslog to Splunk server
+yum -y upgrade rsyslog
+touch /etc/rsyslog.local
+echo "$ActionQueueType LinkedList" > /etc/rsyslog.local
+echo "$ActionQueueFileName Forward1" >> /etc/rsyslog.local
+echo "$ActionResumeRetryCount -1" >> /etc/rsyslog.local
+echo "$ActionQueueSaveOnShutdown on" >> /etc/rsyslog.local
+echo "*.* @172.20.241.20" >> /etc/rsyslog.local
+ 
+# Restarts rsyslog service
+systemctl restart rsyslog.service
+systemctl enable rsyslog.service
+systemctl start rsyslog.service
+ 
+ 
+ 
+# Upgrades/patches critical operating system services to the latest available versions.
+yum -y upgrade postfix dovecot httpd php php-mbstring php-pear mod_ssl roundcubemail community-mysql
+ 
+ 
+ 
+# Edit the config files of the Postfix email server
+touch /etc/postfix/main.local
+echo "mydestination = $myhostname, localhost.$mydomain, localhost, $mydomain" > /etc/postfix/main.local
+echo "smtpd_sasl_type = dovecot" >> /etc/postfix/main.local
+echo "smtpd_sasl_path = private/auth" >> /etc/postfix/main.local
+echo "smtpd_sasl_auth_enable = yes" >> /etc/postfix/main.local
+echo "smtpd_sasl_security_options = noanonymous" >> /etc/postfix/main.local
+echo "smtpd_sasl_local_domain = $myhostname" >> /etc/postfix/main.local
+ 
+# Restarts Postfix service.
+systemctl restart postfix
+systemctl start postfix
+systemctl enable postfix
+ 
+ 
+ 
+# Configure Dovecot server.
+touch /etc/dovecot/dovecot.local
+echo "protocols = pop3" > /etc/dovecot/dovecot.local
+ 
+# Restarts Dovecot service.
+systemctl restart dovecot
+systemctl start dovecot
+systemctl enable dovecot
+ 
+ 
+ 
+# Enable SELinux (if it's not already enabled)
+sudo sed -i 's/disabled/enforcing/g' /etc/selinux/config /etc/selinux/config
+sudo sed -i 's/permissive/enfocing/g' /etc/selinux/config /etc/selinux/config
+ 
+# Allow the roundcube email service to play nicely with SELinux.
+setsebool -P httpd_can_network_connect on
+ 
+# Configure the webmail to connect to the remote MySQL server.
+sed -i "27i\$config['db_dsnw'] = 'mysql://steve:SA!37fdh34h5j4h4@172.20.240.20:2862/roundcubemail';" /etc/roundcubemail/defaults.inc.php
+ 
+ 
+# (Re)starts the HTTPD (Apache) service.
+systemctl restart httpd
+systemctl start httpd
+systemctl enable httpd
+ 
+ 
+ 
+ 
+ 
+# Installs Fail2Ban.
+yum -y install fail2ban
+ 
+# Configure Fail2Ban (uses jail.local to overwrite needed changes).
+touch /etc/fail2ban/jail.local
+ 
+echo "[roundcube-auth]" > /etc/fail2ban/jail.local
+echo "enable = true" >> /etc/fail2ban/jail.local
+echo "" >> /etc/fail2ban/jail.local
+ 
+echo "[apache-auth]" >> /etc/fail2ban/jail.local
+echo "enable = true" >> /etc/fail2ban/jail.local
+echo "" >> /etc/fail2ban/jail.local
+ 
+echo "[apache-overflows]" >> /etc/fail2ban/jail.local
+echo "enable = ture" >> /etc/fail2ban/jail.local
+echo "" >> /etc/fail2ban/jail.local
+ 
+echo "[apache-modsecurity]" >> /etc/fail2ban/jail.local
+echo "enable  = true" >> /etc/fail2ban/jail.local
+echo "" >> /etc/fail2ban/jail.local
+ 
+echo "[apache-shellshock]" >> /etc/fail2ban/jail.local
+echo "enable = true" >> /etc/fail2ban/jail.local
+echo "" >> /etc/fail2ban/jail.local
+ 
+echo "[php-url-fopen]" >> /etc/fail2ban/jail.local
+echo "enable = true" >> /etc/fail2ban/jail.local
+echo "" >> /etc/fail2ban/jail.local
+ 
+echo "[postfix]" >> /etc/fail2ban/jail.local
+echo "enable  = true" >> /etc/fail2ban/jail.local
+echo "" >> /etc/fail2ban/jail.local
+ 
+echo "[postfix-sasl]" >> /etc/fail2ban/jail.local
+echo "enable = true" >> /etc/fail2ban/jail.local
+echo "" >> /etc/fail2ban/jail.local
+ 
+echo "[dovecot]" >> /etc/fail2ban/jail.local
+echo "enable = true" >> /etc/fail2ban/jail.local
+echo "" >> /etc/fail2ban/jail.local
+ 
+# Starts and enables fail2ban.
+systemctl restart fail2ban
+systemctl start fail2ban
+systemctl enable fail2ban
+ 
+ 
+# Removes details as to what the script has done (although this might be unneeded).
+history -c
+exit
