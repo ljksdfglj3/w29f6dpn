@@ -1,0 +1,248 @@
+#!/bin/bash
+ 
+$PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin"
+source /etc/environment && export PATH
+ 
+# Changes root password and sysadmin passwords
+echo "25FEyed" | passwd --stdin root
+echo "h345hn546f" | passwd --stdin sysadmin
+ 
+# Logs baseline information about the sever before configuration.
+mkdir /root/initial/
+top > /root/initial/top.log
+ps -aux > /root/initial/ps.log
+netstat -nap > /root/initial/netstat.log
+uptime > /root/initial/uptime.log
+free -h > /root/initial/freemem.log
+df -h > /root/initial/drivespace-beforebackup.log
+iptables -L > /root/initial/iptables.log
+ 
+# Make a backup of critical files of the system.
+mkdir /root/backup/
+echo "Please enter the mySQL Root passwords."
+mysqldump -u root -p frog > /root/backup/virtuemart.sql
+mysqldump -u root -p roundcubemail -p > /etc/roundcubemail.sql
+mysqldump -u root -p --all-databases > fullDb.sql
+echo "MySQL backups done!"
+cp -r /etc/ /root/backup/
+cp -r /var/ /root/backup/
+ 
+# Logs the size of the machine now that the drive backup has been done (since this will obviously increase the size of the drive).
+df -h > /root/initial/drivespace-afterBackup.log
+ 
+ 
+ 
+ 
+# Disables IPv6
+echo "net.ipv6.conf.all.disable_ipv6 = 1" >> /etc/sysctl.conf
+echo "net.ipv6.conf.default.disable_ipv6 = 1" >> /etc/sysctl.conf
+echo "net.ipv6.conf.lo.disable_ipv6 = 1" >> /etc/sysctl.conf
+ 
+##### Setup Firewall rules #####
+# Clear all existing rules
+iptables -F
+ 
+# Set default action to drop packets
+iptables -P FORWARD DROP
+iptables -P OUTPUT DROP
+iptables -P INPUT DROP
+ 
+# Create table for blacklist
+iptables -N BLACKLIST
+iptables -A BLACKLIST -m recent --remove
+iptables -A BLACKLIST -m recent --name blacklist --set
+iptables -A BLACKLIST -j LOG --log-prefix "Blacklist Blocked: "
+ 
+ 
+ 
+#### SETUP INBOUND RULES ####
+# Allow all traffic already established
+iptables -A INPUT -m state --state established,related -j ACCEPT
+ 
+# Alllow MySQL access
+iptables -A INPUT -p tcp --dport 2862 -s 172.20.241.30 -m state --state new -j ACCEPT
+iptables -A INPUT -p tcp --dport 2862 -s 172.20.241.40 -m state --state new -j ACCEPT
+ 
+# Prevent SYN packet attacks
+iptables -A INPUT -p tcp ! --syn -m state --state NEW -m limit --limit 1/min -j LOG --log-prefix "SYN packet flood: "
+iptables -A INPUT -p tcp ! --syn -m state --state NEW -j DROP
+ 
+# Prevent fragmented packets
+iptables -A INPUT -f -m limit --limit 1/min -j LOG --log-prefix "Fragmented packet: "
+iptables -A INPUT -f -j DROP
+ 
+# Prevent XMAS attacks
+iptables -A INPUT -p tcp --tcp-flags ALL ALL -m limit --limit 1/min -j LOG --log-prefix "XMAS packet: "
+iptables -A INPUT -p tcp --tcp-flags ALL ALL -j DROP
+ 
+# Prevent NULL attacks
+iptables -A INPUT -p tcp --tcp-flags ALL NONE -m limit --limit 1/min -j LOG --log-prefix "NULL packet: "
+iptables -A INPUT -p tcp --tcp-flags ALL NONE -j DROP
+ 
+# Allow ping with limits
+iptables -A INPUT -p icmp -m limit --limit 3/sec -j ACCEPT LOG --log-prefix "Ping packet: "
+iptables -A INPUT -p icmp -j DROP
+ 
+# Drop packets from blacklisted ip for 10 minutes
+iptables -A INPUT -m recent --rcheck --name blacklist --seconds 600 -j DROP
+ 
+# Flag excessive pings as flood attack
+iptables -A INPUT -p icmp -m limit --limit 1/minute -j LOG --log-prefix "ICMP Flood: "
+ 
+ 
+ 
+ 
+#### SETUP LOCALHOST RULES ####
+# Allow local traffic
+iptables -A OUTPUT -o lo -j ACCEPT
+ 
+ 
+#### SETUP OUTBOUND RULES ####
+# Allow all traffic already established
+iptables -A OUTPUT -m state --state established,related -j ACCEPT
+ 
+# Allow MySQL traffic out
+iptables -A OUTPUT -p tcp --dport 2862 -d 172.20.241.30 -m state --state new -j ACCEPT
+iptables -A OUTPUT -p tcp --dport 2862 -d 172.20.241.40 -m state --state new -j ACCEPT
+ 
+# Allow http traffic out
+iptables -A OUTPUT -p tcp --dport 80 -m state --state new -j ACCEPT
+ 
+# Allow https traffic out
+iptables -A OUTPUT -p tcp --dport 443 -m state --state new -j ACCEPT
+ 
+# Allow dns traffic out
+iptables -A OUTPUT -p udp --dport 53 -m state --state new -j ACCEPT
+ 
+# Allow ntp traffic out
+iptables -A OUTPUT -p udp --dport 123 -d 172.20.242.200 -m state --state new -j ACCEPT
+ 
+# Allow rsyslog traffic to send logs out
+iptables -A OUTPUT -p udp --dport 514 -d 172.20.241.20 -m state --state new -j ACCEPT
+ 
+# Allow ping out (with limits)
+iptables -A OUTPUT -p icmp -m limit --limit 3/sec -j ACCEPT
+ 
+# Log everything else about to be dropped
+iptables -A OUTPUT -m limit --limit 2/min -j LOG --log-prefix "Output-Dropped: " --log-level 4
+iptables -A INPUT -m limit --limit 2/min -j LOG --log-prefix "Input-Dropped: " --log-level 4
+iptables -A FORWARD -m limit --limit 2/min -j LOG --log-prefix "Forward-Dropped: " --log-level 4
+ 
+# Save the filter rules
+iptables-save > /etc/iptables
+echo '#!/bin/sh' > /etc/network/if-pre-up.d/iptables
+echo 'iptables-restore < /etc/iptables' >> /etc/network/if-pre-up.d/iptables
+chmod +x /etc/network/if-pre-up.d/iptables
+ 
+ 
+ 
+ 
+# Stops unnecessary services.
+/etc/init.d/atd stop
+/etc/init.d/apache2 stop
+/etc/init.d/bluetooth stop
+/etc/init.d/cron stop
+/etc/init.d/cups stop
+/etc/init.d/nfs-common stop
+/etc/init.d/ssh stop
+/etc/init.d/portmap stop
+/etc/init.d/postfix stop
+/etc/init.d/pulseaudio
+/etc/init.d/avahi-daemon stop
+/etc/init.d/anacron stop
+ 
+# Remove iSCSI from network config
+mv /etc/network/if-up.d/mountnfs /etc/network
+mv /etc/network/if-up.d/avahi-daemon /etc/network
+mv /etc/network/if-up.d/postfix /etc/network
+ 
+# Removes all cron and at jobs
+rm -rf /var/spool/cron/crontabs/*
+rm -rf /var/spool/cron/atspool/*
+rm -rf /var/spool/cron/atjobs/*
+ 
+# Lock the /etc/shadow file
+chmod 0000 /etc/shadow
+ 
+# Install the apt-transport-https package (allows package installation over https)
+apt-get update
+apt-get -y install apt-transport-https
+ 
+# Changes the config file to what it should be.
+echo "deb https://deb.debian.org/debian/ wheezy main non-free contrib" > /etc/apt/sources.list
+echo "deb-src https://deb.debian.org/debian/ wheezy main non-free contrib" >> /etc/apt/sources.list
+echo "deb https://deb.debian.org/debian-security wheezy/updates main non-free contrib" >> /etc/apt/sources.list
+echo "deb-src https://deb.debian.org/debian-security wheezy/updates main non-free contrib" >> /etc/apt/sources.list
+apt-get update
+ 
+# Installs NTP server, configures it, and sets the server to be in the central timezone.
+apt-get -y install ntp
+touch /etc/ntp.local
+echo "server 172.20.242.200 prefer" > /etc/ntp.local
+rm /etc/localtime
+ln -s /usr/share/zoneinfo/America/Chicago /etc/localtime
+ 
+# Restarts and starts NTPd service at system startup.
+service ntp restart
+service ntp start
+ 
+# Forwards rsyslog to Splunk server
+apt-get -y upgrade rsyslog
+touch /etc/rsyslog.local
+echo "$ActionQueueType LinkedList" > /etc/rsyslog.local
+echo "$ActionQueueFileName Forward1" >> /etc/rsyslog.local
+echo "$ActionResumeRetryCount -1" >> /etc/rsyslog.local
+echo "$ActionQueueSaveOnShutdown on" >> /etc/rsyslog.local
+echo "*.* @172.20.241.20" >> /etc/rsyslog.local
+ 
+# Restarts rsyslog service
+service rsyslog restart
+service rsyslog start
+ 
+ 
+# Upgrade critical system packages.
+apt-get -y upgrade mysql-server openssl iptables wget
+ 
+# Run though the mysql_secure_installation
+mysql_secure_installation
+ 
+# Set secure settings on the MySQL config file.
+touch /etc/mysql/my.cnf
+echo "general_log_file   = /var/log/mysql/mysql.log" >> /etc/mysql/my.cnf
+sudo sed -i 's/3306/2862/g' /etc/mysql/my.cnf /etc/mysql/my.cnf
+ 
+# Logs into MySQL as root and adjusts security settings
+echo "Please enter the mysql root password. "
+mysql -u root -p --execute="
+DELETE FROM mysql.user WHERE user=' ' OR host='belle' OR host='127.0.0.1' OR host='%';
+RENAME USER 'root'@'localhost' TO 'adam'@'localhost';
+SET PASSWORD FOR 'adam'@'localhost' = PASSWORD('sd43Ds');
+grant SELECT, UPDATE, INSERT, DELETE on frog.* to 'suse'@'172.20.241.30' IDENTIFIED by 'YqdXM4';
+grant SELECT, UPDATE, INSERT, DELETE on roundcubemail.* to 'steve'@'172.20.241.40' identified by 'SA!37fdh34h5j4h4';
+flush privileges;"
+ 
+# Restarts mysql service
+service mysql restart
+service mysql start
+ 
+ 
+# Install fail2ban
+apt-get -y install fail2ban
+ 
+# Configure fail2ban for mysql.
+touch /etc/fail2ban/jail.local
+echo "[mysqld-auth]" > /etc/fail2ban/jail.local
+echo "enable = true" >> /etc/fail2ban/jail.local
+echo "port = 2862" >> /etc/fail2ban/jail.local
+echo "logpath = /var/log/mysql/mysql.log" >> /etc/fail2ban/jail.local
+echo "filter = true" >> /etc/fail2ban/jail.local
+ 
+ 
+# Removes details as to what the script has done (although this might be unneeded).
+history -c
+ 
+ 
+# Ends the script
+echo "Script finished!"
+echo "Please remember to check the MySQL server to see which users have access to which table(s)."
+exit
