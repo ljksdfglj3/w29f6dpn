@@ -1,5 +1,5 @@
 #!/bin/bash
-# MySQL server
+# MySQL server (Debian)
  
 $PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin"
 source /etc/environment && export PATH
@@ -135,8 +135,9 @@ iptables -A OUTPUT -p icmp -m limit --limit 3/sec -j ACCEPT
 iptables -A OUTPUT -m limit --limit 2/min -j LOG --log-prefix "Output-Dropped: " --log-level 4
 iptables -A INPUT -m limit --limit 2/min -j LOG --log-prefix "Input-Dropped: " --log-level 4
 iptables -A FORWARD -m limit --limit 2/min -j LOG --log-prefix "Forward-Dropped: " --log-level 4
- 
+
 # Save the filter rules
+/etc/init/iptables save
 iptables-save > /etc/iptables
 echo '#!/bin/sh' > /etc/network/if-pre-up.d/iptables
 echo 'iptables-restore < /etc/iptables' >> /etc/network/if-pre-up.d/iptables
@@ -170,7 +171,12 @@ rm -rf /var/spool/cron/atjobs/*
  
 # Lock the /etc/shadow file
 chmod 0000 /etc/shadow
- 
+
+# Sets the service users to no login
+usermod -s /sbin/nologin mysql
+usermod -s /sbin/nologin tomcat
+
+
 # Install the apt-transport-https package (allows package installation over https)
 apt-get update
 apt-get -y install apt-transport-https
@@ -205,6 +211,17 @@ echo "*.* @172.20.241.20" >> /etc/rsyslog.local
 # Restarts rsyslog service
 service rsyslog restart
 service rsyslog start
+ 
+ 
+# Configures the DNS servers to resolve to multiple places.
+echo "# Adds outside DNS servers." >> /etc/resolv.conf
+echo "nameserver 208.67.222.222" > /etc/resolv.conf
+echo "nameserver 208.67.220.220" >> /etc/resolv.conf
+echo "nameserver 8.8.4.4" >> /etc/resolv.conf
+echo "nameserver 8.8.8.8" >> /etc/resolv.conf
+echo "# Adds the team DNS servers." >> /etc/resolv.conf
+echo "nameserver 172.20.242.10" >> /etc/resolv.conf
+echo "nameserver 172.20.242.200" >> /etc/resolv.conf
  
  
 # Upgrade critical system packages.
