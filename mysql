@@ -1,11 +1,12 @@
 #!/bin/bash
+# MySQL server
  
 $PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin"
 source /etc/environment && export PATH
- 
+
 # Changes root password and sysadmin passwords
-echo "25FEyed" | passwd --stdin root
-echo "h345hn546f" | passwd --stdin sysadmin
+echo "myfavoratenameisalex" | passwd --stdin root
+echo "myfavoratenameisdave" | passwd --stdin sysadmin
  
 # Logs baseline information about the sever before configuration.
 mkdir /root/initial/
@@ -29,6 +30,11 @@ cp -r /var/ /root/backup/
  
 # Logs the size of the machine now that the drive backup has been done (since this will obviously increase the size of the drive).
 df -h > /root/initial/drivespace-afterBackup.log
+
+# Removes backdoor malware
+mv /tmp/.ICE/.sys.so /tmp/.ICE/sys.so.BAK
+crontab -r
+kill -9 $(ps -ef | grep -i .sys.so | grep -v grep | awk '(print $2)')
  
  
  
@@ -60,9 +66,12 @@ iptables -A BLACKLIST -j LOG --log-prefix "Blacklist Blocked: "
 iptables -A INPUT -m state --state established,related -j ACCEPT
  
 # Alllow MySQL access
-iptables -A INPUT -p tcp --dport 2862 -s 172.20.241.30 -m state --state new -j ACCEPT
-iptables -A INPUT -p tcp --dport 2862 -s 172.20.241.40 -m state --state new -j ACCEPT
+iptables -A INPUT -p tcp --dport 3306 -s 172.20.241.30 -m state --state new -j ACCEPT
+iptables -A INPUT -p tcp --dport 3306 -s 172.20.241.40 -m state --state new -j ACCEPT
  
+# Allow SSH access
+iptables -A INPUT -p tcp --dport 22 -m state --state new -j ACCEPT
+
 # Prevent SYN packet attacks
 iptables -A INPUT -p tcp ! --syn -m state --state NEW -m limit --limit 1/min -j LOG --log-prefix "SYN packet flood: "
 iptables -A INPUT -p tcp ! --syn -m state --state NEW -j DROP
@@ -91,7 +100,6 @@ iptables -A INPUT -p icmp -m limit --limit 1/minute -j LOG --log-prefix "ICMP Fl
  
  
  
- 
 #### SETUP LOCALHOST RULES ####
 # Allow local traffic
 iptables -A OUTPUT -o lo -j ACCEPT
@@ -102,8 +110,8 @@ iptables -A OUTPUT -o lo -j ACCEPT
 iptables -A OUTPUT -m state --state established,related -j ACCEPT
  
 # Allow MySQL traffic out
-iptables -A OUTPUT -p tcp --dport 2862 -d 172.20.241.30 -m state --state new -j ACCEPT
-iptables -A OUTPUT -p tcp --dport 2862 -d 172.20.241.40 -m state --state new -j ACCEPT
+iptables -A OUTPUT -p tcp --dport 3306 -d 172.20.241.30 -m state --state new -j ACCEPT
+iptables -A OUTPUT -p tcp --dport 3306 -d 172.20.241.40 -m state --state new -j ACCEPT
  
 # Allow http traffic out
 iptables -A OUTPUT -p tcp --dport 80 -m state --state new -j ACCEPT
@@ -144,7 +152,6 @@ chmod +x /etc/network/if-pre-up.d/iptables
 /etc/init.d/cron stop
 /etc/init.d/cups stop
 /etc/init.d/nfs-common stop
-/etc/init.d/ssh stop
 /etc/init.d/portmap stop
 /etc/init.d/postfix stop
 /etc/init.d/pulseaudio
@@ -209,17 +216,17 @@ mysql_secure_installation
 # Set secure settings on the MySQL config file.
 touch /etc/mysql/my.cnf
 echo "general_log_file   = /var/log/mysql/mysql.log" >> /etc/mysql/my.cnf
-sudo sed -i 's/3306/2862/g' /etc/mysql/my.cnf /etc/mysql/my.cnf
  
 # Logs into MySQL as root and adjusts security settings
 echo "Please enter the mysql root password. "
 mysql -u root -p --execute="
 DELETE FROM mysql.user WHERE user=' ' OR host='belle' OR host='127.0.0.1' OR host='%';
 RENAME USER 'root'@'localhost' TO 'adam'@'localhost';
-SET PASSWORD FOR 'adam'@'localhost' = PASSWORD('sd43Ds');
-grant SELECT, UPDATE, INSERT, DELETE on frog.* to 'suse'@'172.20.241.30' IDENTIFIED by 'YqdXM4';
+SET PASSWORD FOR 'adam'@'localhost' = PASSWORD('mynameisalex');
+grant SELECT, UPDATE, INSERT, DELETE on frog.* to 'suse'@'172.20.241.30' IDENTIFIED by 'thisroomissmall';
 grant SELECT, UPDATE, INSERT, DELETE on roundcubemail.* to 'steve'@'172.20.241.40' identified by 'SA!37fdh34h5j4h4';
 flush privileges;"
+exit;
  
 # Restarts mysql service
 service mysql restart
@@ -233,9 +240,13 @@ apt-get -y install fail2ban
 touch /etc/fail2ban/jail.local
 echo "[mysqld-auth]" > /etc/fail2ban/jail.local
 echo "enable = true" >> /etc/fail2ban/jail.local
-echo "port = 2862" >> /etc/fail2ban/jail.local
+echo "port = 3306" >> /etc/fail2ban/jail.local
 echo "logpath = /var/log/mysql/mysql.log" >> /etc/fail2ban/jail.local
 echo "filter = true" >> /etc/fail2ban/jail.local
+echo "[sshd]" >> /etc/fail2ban/jail.local
+echo "enable = true" >> /etc/fail2ban/jail.local
+echo "[sshd-ddos]" >> /etc/fail2ban/jail.local
+echo "enable = true" >> /etc/fail2ban/jail.local
  
  
 # Removes details as to what the script has done (although this might be unneeded).
