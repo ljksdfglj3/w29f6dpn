@@ -270,12 +270,11 @@ echo "enable = true" >> /etc/fail2ban/jail.local
 echo "[sshd-ddos]" >> /etc/fail2ban/jail.local
 echo "enable = true" >> /etc/fail2ban/jail.local
  
- 
-# Removes details as to what the script has done (although this might be unneeded).
-history -c
- 
- 
+
 # Ends the script
 echo "Script finished!"
 echo "Please remember to check the MySQL server to see which users have access to which table(s)."
 exit
+ 
+# Removes details as to what the script has done (although this might be unneeded).
+history -c
