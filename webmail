@@ -320,8 +320,11 @@ echo "" >> /etc/fail2ban/jail.local
 systemctl restart fail2ban
 systemctl start fail2ban
 systemctl enable fail2ban
- 
- 
+
+
+# Prints that the script has now finished.
+echo "Script is now done!"
+
 # Removes details as to what the script has done (although this might be unneeded).
 history -c
 exit
