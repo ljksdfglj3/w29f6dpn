@@ -9,6 +9,7 @@ echo "myfavoratenameisalex" | passwd --stdin root
 echo "myfavoratenameisdave" | passwd --stdin sysadmin
  
 # Logs baseline information about the sever before configuration.
+echo "Making baseline recording documents..."
 mkdir /root/initial/
 top > /root/initial/top.log
 ps -aux > /root/initial/ps.log
@@ -19,6 +20,7 @@ df -h > /root/initial/drivespace-beforebackup.log
 iptables -L > /root/initial/iptables.log
  
 # Make a backup of critical files of the system.
+echo "Starting backup..."
 mkdir /root/backup/
 echo "Please enter the mySQL Root passwords."
 mysqldump -u root -p frog > /root/backup/virtuemart.sql
@@ -27,6 +29,8 @@ mysqldump -u root -p --all-databases > fullDb.sql
 echo "MySQL backups done!"
 cp -r /etc/ /root/backup/
 cp -r /var/ /root/backup/
+echo "Backup complete!" 
+
  
 # Logs the size of the machine now that the drive backup has been done (since this will obviously increase the size of the drive).
 df -h > /root/initial/drivespace-afterBackup.log
