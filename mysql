@@ -105,6 +105,7 @@ iptables -A INPUT -p icmp -m limit --limit 1/minute -j LOG --log-prefix "ICMP Fl
 iptables -A OUTPUT -o lo -j ACCEPT
  
  
+ 
 #### SETUP OUTBOUND RULES ####
 # Allow all traffic already established
 iptables -A OUTPUT -m state --state established,related -j ACCEPT
@@ -238,18 +239,20 @@ echo "general_log_file   = /var/log/mysql/mysql.log" >> /etc/mysql/my.cnf
 echo "Please enter the mysql root password. "
 mysql -u root -p --execute="
 DELETE FROM mysql.user WHERE user=' ' OR host='belle' OR host='127.0.0.1' OR host='%';
+DELETE FROM mysql.user where user NOT IN ('root');
 RENAME USER 'root'@'localhost' TO 'adam'@'localhost';
 SET PASSWORD FOR 'adam'@'localhost' = PASSWORD('mynameisalex');
-grant SELECT, UPDATE, INSERT, DELETE on frog.* to 'suse'@'172.20.241.30' IDENTIFIED by 'thisroomissmall';
-grant SELECT, UPDATE, INSERT, DELETE on roundcubemail.* to 'steve'@'172.20.241.40' identified by 'SA!37fdh34h5j4h4';
-flush privileges;"
-exit;
+CREATE USER 'suse'@'172.20.241.30' IDENTIFIED BY 'thisroomissmall';
+CREATE USER 'steve'@'172.20.241.40' IDENTIFIED BY 'SA!37fdh34h5j4h4';
+grant SELECT, UPDATE, INSERT, DELETE on frog.* to 'suse'@'172.20.241.30';
+grant SELECT, UPDATE, INSERT, DELETE on roundcubemail.* to 'steve'@'172.20.241.40';
+flush privileges;
+exit;"
  
 # Restarts mysql service
 service mysql restart
 service mysql start
- 
- 
+
 # Install fail2ban
 apt-get -y install fail2ban
  
@@ -260,8 +263,10 @@ echo "enable = true" >> /etc/fail2ban/jail.local
 echo "port = 3306" >> /etc/fail2ban/jail.local
 echo "logpath = /var/log/mysql/mysql.log" >> /etc/fail2ban/jail.local
 echo "filter = true" >> /etc/fail2ban/jail.local
+
 echo "[sshd]" >> /etc/fail2ban/jail.local
 echo "enable = true" >> /etc/fail2ban/jail.local
+
 echo "[sshd-ddos]" >> /etc/fail2ban/jail.local
 echo "enable = true" >> /etc/fail2ban/jail.local
  
