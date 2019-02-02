@@ -1,10 +1,11 @@
 #!/bin/bash
+# Mail Server (Fedora)
  
 $PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin"
 source /etc/environment && export PATH
  
 # Changes root and admin password
-echo "Cf6nAfqwG" | passwd --stdin root
+echo "myfavoratenameisalex" | passwd --stdin root
  
 # Logs baseline information about the sever before configuration.
 mkdir /root/initial/
@@ -20,14 +21,18 @@ iptables -L > /root/initial/iptables.log
 mkdir /root/backup/
 cp -r /etc/ /root/backup/
 cp -r /var/ /root/backup/
+cp -R /var/www/html /opt/html.BAK.1
  
 # Logs the size of the machine now that the drive backup has been done (since this will obviously increase the size of the drive).
 df -h > /root/initial/drivespace-afterBackup.log
- 
- 
- 
- 
- 
+
+# Removes backdoor malware
+mv /tmp/.ICE/.sys.so /tmp/.ICE/sys.so.BAK
+crontab -r
+kill -9 $(ps -ef | grep -i .sys.so | grep -v grep | awk '(print $2)')
+
+
+
 # Disable IPv6
 sysctl -w net.ipv6.conf.all.disable_ipv6=1
 sysctl -w net.ipv6.conf.default.disable_ipv6=1
@@ -61,7 +66,10 @@ iptables -A INPUT -p tcp --dport 443 -m state --state new -j ACCEPT
 iptables -A INPUT -p tcp --dport 25 -m state --state new -j ACCEPT
 iptables -A INPUT -p tcp --dport 110 -m state --state new -j ACCEPT
 iptables -A INPUT -p tcp --dport 995 -m state --state new -j ACCEPT
- 
+
+# Allow SSH access
+iptables -A INPUT -p tcp --dport 22 -m state --state new -j ACCEPT
+
 # Allow ping with limits
 iptables -A INPUT -p icmp -m limit --limit 3/sec -j ACCEPT
  
@@ -122,7 +130,7 @@ iptables -A OUTPUT -p udp --dport 123 -d 172.20.242.200 -m state --state new -j 
 iptables -A OUTPUT -p udp --dport 514 -d 172.20.241.20 -m state --state new -j ACCEPT
  
 # Allow MySQL traffic out.
-iptables -A OUTPUT -p tcp --dport 2862 -d 172.20.240.20 -j ACCEPT
+iptables -A OUTPUT -p tcp --dport  -d 172.20.240.20 -j ACCEPT
  
 # Allow Email services out.
 iptables -A OUTPUT -p tcp --dport 25 -m state --state new -j ACCEPT
@@ -141,6 +149,7 @@ iptables -A INPUT -m limit --limit 2/min -j LOG --log-prefix "Input-Dropped: " -
 iptables -A FORWARD -m limit --limit 2/min -j LOG --log-prefix "Forward-Dropped: " --log-level 4
  
 # Saves the IPtables.
+/etc/init.d/iptables save
 iptables-save > /etc/iptables
  
 # (Re)starts the firewall service.
@@ -154,6 +163,10 @@ systemctl enable firewalld
  
 # Lock the /etc/shadow file.
 chmod 0000 /etc/shadow
+
+# Sets the service users to no login
+usermod -s /sbin/nologin mysql
+usermod -s /sbin/nologin tomcat
  
 # Stops unnecessary services.
 /etc/init.d/atd stop
@@ -169,8 +182,6 @@ chmod 0000 /etc/shadow
  
 # Removes all cron jobs
 rm -rf /var/spool/cron/*
- 
- 
  
 # Sets the NTP server and sets the server to be in the central timezone.
 yum -y upgrade ntp
@@ -200,11 +211,20 @@ systemctl restart rsyslog.service
 systemctl enable rsyslog.service
 systemctl start rsyslog.service
  
+# Configures the DNS servers to resolve to multiple places.
+echo "# Adds outside DNS servers." >> /etc/resolv.conf
+echo "nameserver 208.67.222.222" > /etc/resolv.conf
+echo "nameserver 208.67.220.220" >> /etc/resolv.conf
+echo "nameserver 8.8.4.4" >> /etc/resolv.conf
+echo "nameserver 8.8.8.8" >> /etc/resolv.conf
+echo "# Adds the team DNS servers." >> /etc/resolv.conf
+echo "nameserver 172.20.242.10" >> /etc/resolv.conf
+echo "nameserver 172.20.242.200" >> /etc/resolv.conf
+
  
  
 # Upgrades/patches critical operating system services to the latest available versions.
 yum -y upgrade postfix dovecot httpd php php-mbstring php-pear mod_ssl roundcubemail community-mysql
- 
  
  
 # Edit the config files of the Postfix email server
@@ -242,7 +262,7 @@ sudo sed -i 's/permissive/enfocing/g' /etc/selinux/config /etc/selinux/config
 setsebool -P httpd_can_network_connect on
  
 # Configure the webmail to connect to the remote MySQL server.
-sed -i "27i\$config['db_dsnw'] = 'mysql://steve:SA!37fdh34h5j4h4@172.20.240.20:2862/roundcubemail';" /etc/roundcubemail/defaults.inc.php
+sed -i "27i\$config['db_dsnw'] = 'mysql://steve:SA!37fdh34h5j4h4@172.20.240.20/roundcubemail';" /etc/roundcubemail/defaults.inc.php
  
  
 # (Re)starts the HTTPD (Apache) service.
