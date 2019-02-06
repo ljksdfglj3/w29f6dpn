@@ -132,6 +132,10 @@ iptables -A OUTPUT -p udp --dport 123 -d 172.20.242.200 -m state --state new -j 
  
 # Allow rsyslog traffic to send logs out
 iptables -A OUTPUT -p udp --dport 514 -d 172.20.241.20 -m state --state new -j ACCEPT
+iptables -A OUTPUT -p tcp --dport 514 -d 172.20.241.20 -m state --state new -j ACCEPT
+
+# Allow port 8000 to Splunk WebGUI.
+iptables -A OUTPUT -p tcp --dport 8000 -d 172.20.241.20 -m state --state new -j ACCEPT
  
 # Allow ping out (with limits)
 iptables -A OUTPUT -p icmp -m limit --limit 3/sec -j ACCEPT
