@@ -200,7 +200,7 @@ usermod -s /sbin/nologin tomcat
   
 # Sets the NTP server and sets the server to be in the central timezone.
 yum -y upgrade ntp
-echo "server 172.20.242.200 prefer" >> /etc/ntp.
+echo "server 172.20.242.200 prefer" >> /etc/ntp.conf
 timedatectl set-timezone America/Chicago
 timedatectl set-ntp yes
  
