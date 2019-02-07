@@ -48,106 +48,106 @@ echo "net.ipv6.conf.all.disable_ipv6 = 1" >> /etc/sysctl.conf
 echo "net.ipv6.conf.default.disable_ipv6 = 1" >> /etc/sysctl.conf
 echo "net.ipv6.conf.lo.disable_ipv6 = 1" >> /etc/sysctl.conf
  
+ 
+ 
 ##### Setup Firewall rules #####
 # Clear all existing rules
 iptables -F
- 
-# Set default action to drop packets
-iptables -P FORWARD DROP
-iptables -P OUTPUT DROP
-iptables -P INPUT DROP
- 
+  
 # Create table for blacklist
 iptables -N BLACKLIST
 iptables -A BLACKLIST -m recent --remove
 iptables -A BLACKLIST -m recent --name blacklist --set
 iptables -A BLACKLIST -j LOG --log-prefix "Blacklist Blocked: "
  
+ #### Setup Localhost Rules ####
+iptables -A INPUT -i lo -j ACCEPT
+iptables -A OUTPUT -o lo -j ACCEPT
  
- 
-#### SETUP INBOUND RULES ####
+#### Setup Services ####
 # Allow all traffic already established
 iptables -A INPUT -m conntrack --ctstate ESTABLISHED -j ACCEPT
 iptables -A INPUT -m conntrack --ctstate RELATED -j ACCEPT
-
-# Alllow MySQL access
-iptables -A INPUT -p tcp -s 172.20.241.30 --dport 3306 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
-iptables -A INPUT -p tcp -s 172.20.241.40 --dport 3306 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
- 
-# Allow SSH access
-iptables -A INPUT -p tcp --sport 22 -m conntrack --ctstate ESTABLISHED -j ACCEPT
-
-# Prevent SYN packet attacks
-iptables -A INPUT -p tcp ! --syn -m state --state NEW -m limit --limit 1/min -j LOG --log-prefix "SYN packet flood: "
-iptables -A INPUT -p tcp ! --syn -m state --state NEW -j DROP
- 
-# Prevent fragmented packets
-iptables -A INPUT -f -m limit --limit 1/min -j LOG --log-prefix "Fragmented packet: "
-iptables -A INPUT -f -j DROP
- 
-# Prevent XMAS attacks
-iptables -A INPUT -p tcp --tcp-flags ALL ALL -m limit --limit 1/min -j LOG --log-prefix "XMAS packet: "
-iptables -A INPUT -p tcp --tcp-flags ALL ALL -j DROP
- 
-# Prevent NULL attacks
-iptables -A INPUT -p tcp --tcp-flags ALL NONE -m limit --limit 1/min -j LOG --log-prefix "NULL packet: "
-iptables -A INPUT -p tcp --tcp-flags ALL NONE -j DROP
- 
-# Allow ping with limits
-iptables -A INPUT -p icmp -m limit --limit 3/sec -j ACCEPT LOG --log-prefix "Ping packet: "
-iptables -A INPUT -p icmp -j DROP
- 
-# Drop packets from blacklisted ip for 10 minutes
-iptables -A INPUT -m recent --rcheck --name blacklist --seconds 600 -j DROP
- 
-# Flag excessive pings as flood attack
-iptables -A INPUT -p icmp -m limit --limit 1/minute -j LOG --log-prefix "ICMP Flood: "
- 
- 
- 
-#### SETUP LOCALHOST RULES ####
-# Allow local traffic
-iptables -A OUTPUT -o lo -j ACCEPT
- 
- 
- 
-#### SETUP OUTBOUND RULES ####
-# Allow all traffic already established
 iptables -A OUTPUT -m conntrack --ctstate ESTABLISHED -j ACCEPT
 iptables -A OUTPUT -m conntrack --ctstate RELATED -j ACCEPT
 
-# Allow MySQL traffic out
-iptables -A OUTPUT -p tcp -d 172.20.241.30 --sport 3306 -m conntrack --ctstate ESTABLISHED -j ACCEPT
-iptables -A OUTPUT -p tcp -d 172.20.241.40 --sport 3306 -m conntrack --ctstate ESTABLISHED -j ACCEPT
+# Alllow MySQL access
+iptables -A INPUT -p tcp -s 172.20.241.30 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
+iptables -A INPUT -p tcp -s 172.20.241.40 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
+iptables -A OUTPUT -p tcp --sport 3306 -d 172.20.241.30 -m conntrack --ctstate ESTABLISHED -j ACCEPT
+iptables -A OUTPUT -p tcp --sport 3306 -d 172.20.241.40 -m conntrack --ctstate ESTABLISHED -j ACCEPT
  
-# Allow HTTP traffic out
-iptables -A OUTPUT -p tcp --dport 80 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
- 
-# Allow HTTPS traffic out
-iptables -A OUTPUT -p tcp --dport 443 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
- 
-# Allow DNS traffic out
-iptables -A OUTPUT -p udp --dport 53 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
- 
-# Allow NTP traffic out
-iptables -A OUTPUT -p udp --dport 123 -d 172.20.242.200 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
- 
-# Allow rsyslog traffic to send logs out.
-iptables -A OUTPUT -p udp --dport 5014 -d 172.20.241.20 -m state --state new -j ACCEPT
+# Allow SSH access
+iptables -A INPUT -p tcp --sport 22 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
+iptables -A OUTPUT -p tcp --dport 22 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
 
 # Allow port 8000 to Splunk WebGUI.
 iptables -A OUTPUT -p tcp --dport 8000 -d 172.20.241.20 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
+iptables -A INPUT -p tcp --sport 8000 -s 172.20.241.20 -m conntrack --ctstate ESTABLISHED -j ACCEPT
 
-# Allow SSH connections.
-iptables -A OUTPUT -p tcp --dport 22 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
+
+###### Allow traffic to apply patches, send logs, NTP, etc. ######
+# Allow HTTP traffic.
+iptables -A OUTPUT -p tcp --dport 80 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
+iptables -A INPUT -p tcp --sport 80 -m conntrack --ctstate ESTABLISHED -j ACCEPT
+
+# Allow HTTPS traffic.
+iptables -A OUTPUT -p tcp --dport 443 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
+iptables -A INPUT -p tcp --sport 443 -m conntrack --ctstate ESTABLISHED -j ACCEPT
+
+# Allow DNS traffic.
+iptables -A OUTPUT -p udp --dport 53 -j ACCEPT
+iptables -A INPUT -p udp --sport 53 -j ACCEPT
+
+# Allow NTP traffic.
+iptables -A OUTPUT -p udp --dport 123 -d 172.20.242.200 -j ACCEPT
+iptables -A INPUT -p udp --sport 123 -s 172.20.242.200 -j ACCEPT
  
-# Allow ping out (with limits).
-iptables -A OUTPUT -p icmp -m limit --limit 3/sec -j ACCEPT
+# Allow syslog traffic.
+iptables -A OUTPUT -p udp --dport 5014 -d 172.20.241.20 -j ACCEPT
+iptables -A INPUT -p udp --sport 5014 -s 172.20.241.20 -j ACCEPT
+
+####### Allow cautionary protocols with limits #######
+# Allow ping with limits
+iptables -A INPUT -p icmp -m limit --limit 3/second -j ACCEPT
+iptables -A OUTPUT -p icmp -m limit --limit 3/second -j ACCEPT
+iptables -A INPUT -p icmp -m limit --limit 1/minute -j LOG --log-prefix "Inbound ICMP Flood: "
+iptables -A OUTPUT -p icmp -m limit --limit 1/minute -j LOG --log-prefix "Outbound ICMP Flood: "
+
+# Prevent SYN packet attacks
+iptables -A INPUT -p tcp -m state --state NEW -m limit --limit 2/second --limit-burst 2 -j ACCEPT
+iptables -A INPUT -p tcp ! --syn -m state --state NEW -m limit --limit 2/second --limit-burst 2 -j LOG --log-prefix "Inbound SYN packet flood: "
+
+# Prevent fragmented packets
+iptables -A INPUT -f -m limit --limit 1/min -j LOG --log-prefix "Inbound Fragmented packet: "
+
+# Prevent XMAS attacks
+iptables -A INPUT -p tcp --tcp-flags ALL ALL -m limit --limit 1/min -j LOG --log-prefix "Inbound XMAS packet: "
+iptables -A INPUT -p tcp --tcp-flags ALL ALL -j DROP
+
+# Prevent NULL attacks
+iptables -A INPUT -p tcp --tcp-flags ALL NONE -m limit --limit 1/min -j LOG --log-prefix "Inbound NULL packet: "
+iptables -A INPUT -p tcp --tcp-flags ALL NONE -j DROP
  
+## Remember all IP connections and send excessive requests to blacklist
+iptables -A INPUT -m state --state NEW -m recent --set
+iptables -A INPUT ! -s 172.20.240.0/22 -m recent --update --seconds 10 --hitcount 20 -j BLACKLIST
+
+# Drop packets from blacklisted IP for 10 minutes
+iptables -A INPUT -m recent --rcheck --name blacklist --seconds 600 -j DROP
+
 # Log everything else about to be dropped.
 iptables -A OUTPUT -m limit --limit 2/min -j LOG --log-prefix "Output-Dropped: " --log-level 4
+iptables -A OUTPUT -m limit --limit 2/min -j DROP
 iptables -A INPUT -m limit --limit 2/min -j LOG --log-prefix "Input-Dropped: " --log-level 4
+iptables -A INPUT -m limit --limit 2/min -j DROP
 iptables -A FORWARD -m limit --limit 2/min -j LOG --log-prefix "Forward-Dropped: " --log-level 4
+iptables -A FORWARD -m limit --limit 2/min -j DROP
+
+# Set default action to drop packets
+iptables -P FORWARD DROP
+iptables -P OUTPUT DROP
+iptables -P INPUT DROP
 
 # Save the filter rules.
 /etc/init/iptables save
