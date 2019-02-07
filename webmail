@@ -105,8 +105,8 @@ iptables -A INPUT -p tcp --dport 995 -m conntrack --ctstate NEW,ESTABLISHED -j A
 iptables -A OUTPUT -p tcp --sport 995 -m conntrack --ctstate ESTABLISHED -j ACCEPT
 
 # Allow Outgoing LDAP connections.
-iptables -A OUTPUT -p udp -d 172.20.242.200  –dport 389 -m state –state NEW,ESTABLISHED -j ACCEPT
-iptables -A INPUT -p udp –sport 389 -d 172.20.242.200 -m state –state ESTABLISHED -j ACCEPT
+iptables -A OUTPUT -p udp –-dport 389 -d 172.20.242.200 -m state –state NEW,ESTABLISHED -j ACCEPT
+iptables -A INPUT -p udp –-sport 389 -s 172.20.242.200 -m state –state ESTABLISHED -j ACCEPT
 
 # Allow MySQL Connections out to MySQL server.
 iptables -A OUTPUT -p tcp -d 172.20.240.20 --dport 3306 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
