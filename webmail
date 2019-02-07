@@ -200,8 +200,7 @@ usermod -s /sbin/nologin tomcat
   
 # Sets the NTP server and sets the server to be in the central timezone.
 yum -y upgrade ntp
-touch /etc/ntp.local
-echo "server 172.20.242.200 prefer" > /etc/ntp.local
+echo "server 172.20.242.200 prefer" >> /etc/ntp.
 timedatectl set-timezone America/Chicago
 timedatectl set-ntp yes
  
@@ -214,12 +213,11 @@ systemctl start ntpd.service
  
 # Forwards rsyslog to Splunk server.
 yum -y upgrade rsyslog
-touch /etc/rsyslog.local
-echo "$ActionQueueType LinkedList" > /etc/rsyslog.local
-echo "$ActionQueueFileName Forward1" >> /etc/rsyslog.local
-echo "$ActionResumeRetryCount -1" >> /etc/rsyslog.local
-echo "$ActionQueueSaveOnShutdown on" >> /etc/rsyslog.local
-echo "*.* @172.20.241.20:5014" >> /etc/rsyslog.local
+echo "$ActionQueueType LinkedList" > /etc/rsyslog.conf
+echo "$ActionQueueFileName Forward1" >> /etc/rsyslog.conf
+echo "$ActionResumeRetryCount -1" >> /etc/rsyslog.conf
+echo "$ActionQueueSaveOnShutdown on" >> /etc/rsyslog.conf
+echo "*.* @172.20.241.20:5014" >> /etc/rsyslog.conf
  
 # Restarts rsyslog service
 systemctl restart rsyslog.service
@@ -244,13 +242,12 @@ yum -y upgrade postfix dovecot httpd php php-mbstring php-pear mod_ssl roundcube
  
  
 # Edit the config files of the Postfix email server
-touch /etc/postfix/main.local
-echo "mydestination = $myhostname, localhost.$mydomain, localhost, $mydomain" > /etc/postfix/main.local
-echo "smtpd_sasl_type = dovecot" >> /etc/postfix/main.local
-echo "smtpd_sasl_path = private/auth" >> /etc/postfix/main.local
-echo "smtpd_sasl_auth_enable = yes" >> /etc/postfix/main.local
-echo "smtpd_sasl_security_options = noanonymous" >> /etc/postfix/main.local
-echo "smtpd_sasl_local_domain = $myhostname" >> /etc/postfix/main.local
+echo "mydestination = $myhostname, localhost.$mydomain, localhost, $mydomain" >> /etc/postfix/main.cf
+echo "smtpd_sasl_type = dovecot" >> /etc/postfix/main.cf
+echo "smtpd_sasl_path = private/auth" >> /etc/postfix/main.cf
+echo "smtpd_sasl_auth_enable = yes" >> /etc/postfix/main.cf
+echo "smtpd_sasl_security_options = noanonymous" >> /etc/postfix/main.cf
+echo "smtpd_sasl_local_domain = $myhostname" >> /etc/postfix/main.cf
  
 # Restarts Postfix service.
 systemctl restart postfix
