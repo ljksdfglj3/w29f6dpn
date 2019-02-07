@@ -64,6 +64,11 @@ sysctl -w net.ipv6.conf.default.disable_ipv6=1
 # Clear all existing rules
 iptables -F
 
+# Set default action to drop packets
+iptables -P FORWARD DROP
+iptables -P OUTPUT DROP
+iptables -P INPUT DROP
+
 # Create table for blacklist
 iptables -N BLACKLIST
 iptables -A BLACKLIST -m recent --remove
@@ -173,11 +178,6 @@ iptables -A INPUT -m limit --limit 2/min -j LOG --log-prefix "Input-Dropped: " -
 iptables -A INPUT -m limit --limit 2/min -j DROP
 iptables -A FORWARD -m limit --limit 2/min -j LOG --log-prefix "Forward-Dropped: " --log-level 4
 iptables -A FORWARD -m limit --limit 2/min -j DROP
-
-# Set default action to drop packets
-iptables -P FORWARD DROP
-iptables -P OUTPUT DROP
-iptables -P INPUT DROP
 
 # Saves the IPtables.
 /etc/init.d/iptables save
