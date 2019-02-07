@@ -67,14 +67,15 @@ iptables -A BLACKLIST -j LOG --log-prefix "Blacklist Blocked: "
  
 #### SETUP INBOUND RULES ####
 # Allow all traffic already established
-iptables -A INPUT -m state --state established,related -j ACCEPT
- 
+iptables -A INPUT -m conntrack --ctstate ESTABLISHED -j ACCEPT
+iptables -A INPUT -m conntrack --ctstate RELATED -j ACCEPT
+
 # Alllow MySQL access
-iptables -A INPUT -p tcp --dport 3306 -s 172.20.241.30 -m state --state new -j ACCEPT
-iptables -A INPUT -p tcp --dport 3306 -s 172.20.241.40 -m state --state new -j ACCEPT
+iptables -A INPUT -p tcp -s 172.20.241.30 --dport 3306 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
+iptables -A INPUT -p tcp -s 172.20.241.40 --dport 3306 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
  
 # Allow SSH access
-iptables -A INPUT -p tcp --dport 22 -m state --state new -j ACCEPT
+iptables -A INPUT -p tcp --sport 22 -m conntrack --ctstate ESTABLISHED -j ACCEPT
 
 # Prevent SYN packet attacks
 iptables -A INPUT -p tcp ! --syn -m state --state NEW -m limit --limit 1/min -j LOG --log-prefix "SYN packet flood: "
@@ -112,40 +113,43 @@ iptables -A OUTPUT -o lo -j ACCEPT
  
 #### SETUP OUTBOUND RULES ####
 # Allow all traffic already established
-iptables -A OUTPUT -m state --state established,related -j ACCEPT
- 
+iptables -A OUTPUT -m conntrack --ctstate ESTABLISHED -j ACCEPT
+iptables -A OUTPUT -m conntrack --ctstate RELATED -j ACCEPT
+
 # Allow MySQL traffic out
-iptables -A OUTPUT -p tcp --dport 3306 -d 172.20.241.30 -m state --state new -j ACCEPT
-iptables -A OUTPUT -p tcp --dport 3306 -d 172.20.241.40 -m state --state new -j ACCEPT
+iptables -A OUTPUT -p tcp -d 172.20.241.30 --sport 3306 -m conntrack --ctstate ESTABLISHED -j ACCEPT
+iptables -A OUTPUT -p tcp -d 172.20.241.40 --sport 3306 -m conntrack --ctstate ESTABLISHED -j ACCEPT
  
-# Allow http traffic out
-iptables -A OUTPUT -p tcp --dport 80 -m state --state new -j ACCEPT
+# Allow HTTP traffic out
+iptables -A OUTPUT -p tcp --dport 80 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
  
-# Allow https traffic out
-iptables -A OUTPUT -p tcp --dport 443 -m state --state new -j ACCEPT
+# Allow HTTPS traffic out
+iptables -A OUTPUT -p tcp --dport 443 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
  
-# Allow dns traffic out
-iptables -A OUTPUT -p udp --dport 53 -m state --state new -j ACCEPT
+# Allow DNS traffic out
+iptables -A OUTPUT -p udp --dport 53 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
  
-# Allow ntp traffic out
-iptables -A OUTPUT -p udp --dport 123 -d 172.20.242.200 -m state --state new -j ACCEPT
+# Allow NTP traffic out
+iptables -A OUTPUT -p udp --dport 123 -d 172.20.242.200 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
  
-# Allow rsyslog traffic to send logs out
-iptables -A OUTPUT -p udp --dport 514 -d 172.20.241.20 -m state --state new -j ACCEPT
-iptables -A OUTPUT -p tcp --dport 514 -d 172.20.241.20 -m state --state new -j ACCEPT
+# Allow rsyslog traffic to send logs out.
+iptables -A OUTPUT -p udp --dport 5014 -d 172.20.241.20 -m state --state new -j ACCEPT
 
 # Allow port 8000 to Splunk WebGUI.
-iptables -A OUTPUT -p tcp --dport 8000 -d 172.20.241.20 -m state --state new -j ACCEPT
+iptables -A OUTPUT -p tcp --dport 8000 -d 172.20.241.20 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
+
+# Allow SSH connections.
+iptables -A OUTPUT -p tcp --dport 22 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
  
-# Allow ping out (with limits)
+# Allow ping out (with limits).
 iptables -A OUTPUT -p icmp -m limit --limit 3/sec -j ACCEPT
  
-# Log everything else about to be dropped
+# Log everything else about to be dropped.
 iptables -A OUTPUT -m limit --limit 2/min -j LOG --log-prefix "Output-Dropped: " --log-level 4
 iptables -A INPUT -m limit --limit 2/min -j LOG --log-prefix "Input-Dropped: " --log-level 4
 iptables -A FORWARD -m limit --limit 2/min -j LOG --log-prefix "Forward-Dropped: " --log-level 4
 
-# Save the filter rules
+# Save the filter rules.
 /etc/init/iptables save
 iptables-save > /etc/iptables
 echo '#!/bin/sh' > /etc/network/if-pre-up.d/iptables
@@ -157,7 +161,6 @@ chmod +x /etc/network/if-pre-up.d/iptables
  
 # Stops unnecessary services.
 /etc/init.d/atd stop
-/etc/init.d/apache2 stop
 /etc/init.d/bluetooth stop
 /etc/init.d/cron stop
 /etc/init.d/cups stop
@@ -167,27 +170,30 @@ chmod +x /etc/network/if-pre-up.d/iptables
 /etc/init.d/pulseaudio stop
 /etc/init.d/avahi-daemon stop
 /etc/init.d/anacron stop
+/etc/init.d/vsftpd stop
 /etc/init.d/apache2 stop
  
-# Remove iSCSI from network config
+# Remove iSCSI from network config.
 mv /etc/network/if-up.d/mountnfs /etc/network
 mv /etc/network/if-up.d/avahi-daemon /etc/network
 mv /etc/network/if-up.d/postfix /etc/network
  
-# Removes all cron and at jobs
+# Removes all cron and at jobs.
 rm -rf /var/spool/cron/crontabs/*
 rm -rf /var/spool/cron/atspool/*
 rm -rf /var/spool/cron/atjobs/*
  
-# Lock the /etc/shadow file
+# Locks the shadow and id_rsa files.
 chmod 0000 /etc/shadow
+chmod 600 ~/.ssh/id_rsa
+chmod 600 /home/sysadmin/.ssh/id_rsa
 
-# Sets the service users to no login
+# Sets the service users to no login.
 usermod -s /sbin/nologin mysql
 usermod -s /sbin/nologin tomcat
 
 
-# Install the apt-transport-https package (allows package installation over https)
+# Install the apt-transport-https package (allows package installation over https).
 apt-get update
 apt-get -y install apt-transport-https
  
@@ -209,43 +215,44 @@ ln -s /usr/share/zoneinfo/America/Chicago /etc/localtime
 service ntp restart
 service ntp start
  
-# Forwards rsyslog to Splunk server
+# Forwards rsyslog to Splunk server.
 apt-get -y upgrade rsyslog
 touch /etc/rsyslog.local
 echo "$ActionQueueType LinkedList" > /etc/rsyslog.local
 echo "$ActionQueueFileName Forward1" >> /etc/rsyslog.local
 echo "$ActionResumeRetryCount -1" >> /etc/rsyslog.local
 echo "$ActionQueueSaveOnShutdown on" >> /etc/rsyslog.local
-echo "*.* @172.20.241.20" >> /etc/rsyslog.local
+echo "*.* @172.20.241.20:5014" >> /etc/rsyslog.local
  
-# Restarts rsyslog service
+# Restarts rsyslog service.
 service rsyslog restart
 service rsyslog start
  
  
 # Configures the DNS servers to resolve to multiple places.
-echo "# Adds outside DNS servers." > /etc/resolv.conf
+echo "# Adds the team DNS servers." > /etc/resolv.conf
+echo "nameserver 172.20.242.200" >> /etc/resolv.conf
+echo "nameserver 172.20.242.10" >> /etc/resolv.conf
+echo "# Adds outside DNS servers." >> /etc/resolv.conf
 echo "nameserver 208.67.222.222" >> /etc/resolv.conf
 echo "nameserver 208.67.220.220" >> /etc/resolv.conf
 echo "nameserver 8.8.4.4" >> /etc/resolv.conf
 echo "nameserver 8.8.8.8" >> /etc/resolv.conf
-echo "# Adds the team DNS servers." >> /etc/resolv.conf
-echo "nameserver 172.20.242.10" >> /etc/resolv.conf
-echo "nameserver 172.20.242.200" >> /etc/resolv.conf
+
  
  
 # Upgrade critical system packages.
 apt-get -y upgrade mysql-server openssl iptables wget
  
-# Run though the mysql_secure_installation
+# Run though the mysql_secure_installation.
 mysql_secure_installation
  
 # Set secure settings on the MySQL config file.
 touch /etc/mysql/my.cnf
 echo "general_log_file   = /var/log/mysql/mysql.log" >> /etc/mysql/my.cnf
  
-# Logs into MySQL as root and adjusts security settings
-echo "Please enter the mysql root password. "
+# Logs into MySQL as root and adjusts security settings.
+echo "Please enter the MySQL root password: "
 mysql -u root -p --execute="
 DELETE FROM mysql.user WHERE user=' ' OR host='belle' OR host='127.0.0.1' OR host='%';
 DELETE FROM mysql.user where user NOT IN ('root');
@@ -258,32 +265,37 @@ grant SELECT, UPDATE, INSERT, DELETE on roundcubemail.* to 'steve'@'172.20.241.4
 flush privileges;
 exit;"
  
-# Restarts mysql service
+# Restarts MySQL service.
 service mysql restart
 service mysql start
 
-# Install fail2ban
+# Install Fail2Ban.
 apt-get -y install fail2ban
  
-# Configure fail2ban for mysql.
+# Configure Fail2Ban for mysql.
 touch /etc/fail2ban/jail.local
 echo "[mysqld-auth]" > /etc/fail2ban/jail.local
 echo "enable = true" >> /etc/fail2ban/jail.local
 echo "port = 3306" >> /etc/fail2ban/jail.local
 echo "logpath = /var/log/mysql/mysql.log" >> /etc/fail2ban/jail.local
 echo "filter = true" >> /etc/fail2ban/jail.local
+echo "" >> /etc/fail2ban/jail.local
 
+# Configure Fail2Ban for SSH.
 echo "[sshd]" >> /etc/fail2ban/jail.local
 echo "enable = true" >> /etc/fail2ban/jail.local
-
+echo "" >> /etc/fail2ban/jail.local
 echo "[sshd-ddos]" >> /etc/fail2ban/jail.local
 echo "enable = true" >> /etc/fail2ban/jail.local
+echo "" >> /etc/fail2ban/jail.local
  
 
-# Ends the script
+# Tells the user the script has finished.
 echo "Script finished!"
 echo "Please remember to check the MySQL server to see which users have access to which table(s)."
-exit
  
 # Removes details as to what the script has done (although this might be unneeded).
 history -c
+
+# Exits the scripts.
+exit
