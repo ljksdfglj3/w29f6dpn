@@ -206,8 +206,7 @@ apt-get update
  
 # Installs NTP server, configures it, and sets the server to be in the central timezone.
 apt-get -y install ntp
-touch /etc/ntp.local
-echo "server 172.20.242.200 prefer" > /etc/ntp.local
+echo "server 172.20.242.200 prefer" > /etc/ntp.conf
 rm /etc/localtime
 ln -s /usr/share/zoneinfo/America/Chicago /etc/localtime
  
