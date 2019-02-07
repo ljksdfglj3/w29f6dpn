@@ -217,12 +217,11 @@ service ntp start
  
 # Forwards rsyslog to Splunk server.
 apt-get -y upgrade rsyslog
-touch /etc/rsyslog.local
-echo "$ActionQueueType LinkedList" > /etc/rsyslog.local
-echo "$ActionQueueFileName Forward1" >> /etc/rsyslog.local
-echo "$ActionResumeRetryCount -1" >> /etc/rsyslog.local
-echo "$ActionQueueSaveOnShutdown on" >> /etc/rsyslog.local
-echo "*.* @172.20.241.20:5014" >> /etc/rsyslog.local
+echo "$ActionQueueType LinkedList" >> /etc/rsyslog.conf
+echo "$ActionQueueFileName Forward1" >> /etc/rsyslog.conf
+echo "$ActionResumeRetryCount -1" >> /etc/rsyslog.conf
+echo "$ActionQueueSaveOnShutdown on" >> /etc/rsyslog.conf
+echo "*.* @172.20.241.20:5014" >> /etc/rsyslog.conf
  
 # Restarts rsyslog service.
 service rsyslog restart
