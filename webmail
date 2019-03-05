@@ -286,6 +286,7 @@ systemctl enable dovecot
 # Enable SELinux (if it's not already enabled)
 sudo sed -i 's/disabled/enforcing/g' /etc/selinux/config /etc/selinux/config
 sudo sed -i 's/permissive/enfocing/g' /etc/selinux/config /etc/selinux/config
+
  
 # Allow the roundcube email service to play nicely with SELinux.
 setsebool -P httpd_can_network_connect on
