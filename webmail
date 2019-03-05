@@ -32,6 +32,9 @@ df -h > /root/initial/drivespace-afterBackup.log
 mv /tmp/.ICE/.sys.so /tmp/.ICE/sys.so.BAK
 crontab -r
 kill -9 $(ps -ef | grep -i .sys.so | grep -v grep | awk '(print $2)')
+yum reinstall systemd
+yum reinstall initscripts
+yum install -y claimav chkrootkit 
 
 # Removes all cron and at jobs.
 rm -rf /var/spool/cron/*
@@ -202,13 +205,19 @@ systemctl enable firewalld
 
 
 
-# Lock the /etc/shadow file.
+# Locks the /etc/shadow file and id_rsa file.
 chmod 0000 /etc/shadow
-chmod 600 ~/.ssh/id_rsa
+chmod 600 /root/.ssh/id_rsa
 
 # Sets the service users to no login
 usermod -s /sbin/nologin mysql
 usermod -s /sbin/nologin tomcat
+usermod -s /sbin/nologin apache2
+usermod -s /sbin/nologin httpd
+usermod -s /sbin/nologin www-data
+usermod -s /sbin/nologin postfix
+usermod -s /sbin/nologin dovecot
+usermod -s /sbin/nologin ntp 
   
 # Sets the NTP server and sets the server to be in the central timezone.
 yum -y upgrade ntp
@@ -225,11 +234,11 @@ systemctl start ntpd.service
  
 # Forwards rsyslog to Splunk server.
 yum -y upgrade rsyslog
-echo "$ActionQueueType LinkedList" > /etc/rsyslog.conf
-echo "$ActionQueueFileName Forward1" >> /etc/rsyslog.conf
-echo "$ActionResumeRetryCount -1" >> /etc/rsyslog.conf
-echo "$ActionQueueSaveOnShutdown on" >> /etc/rsyslog.conf
-echo "*.* @172.20.241.20:5014" >> /etc/rsyslog.conf
+echo '$ActionQueueType LinkedList' >> /etc/rsyslog.conf
+echo '$ActionQueueFileName Forward1' >> /etc/rsyslog.conf
+echo '$ActionResumeRetryCount -1' >> /etc/rsyslog.conf
+echo '$ActionQueueSaveOnShutdown on' >> /etc/rsyslog.conf
+echo '*.* @172.20.241.20:5014' >> /etc/rsyslog.conf
  
 # Restarts rsyslog service
 systemctl restart rsyslog.service

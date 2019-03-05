@@ -41,8 +41,6 @@ crontab -r
 kill -9 $(ps -ef | grep -i .sys.so | grep -v grep | awk '(print $2)')
  
  
- 
- 
 # Disables IPv6
 echo "net.ipv6.conf.all.disable_ipv6 = 1" >> /etc/sysctl.conf
 echo "net.ipv6.conf.default.disable_ipv6 = 1" >> /etc/sysctl.conf
@@ -197,12 +195,18 @@ rm -rf /var/spool/cron/atjobs/*
  
 # Locks the shadow and id_rsa files.
 chmod 0000 /etc/shadow
-chmod 600 ~/.ssh/id_rsa
+chmod 600 /root/.ssh/id_rsa
 chmod 600 /home/sysadmin/.ssh/id_rsa
 
 # Sets the service users to no login.
 usermod -s /sbin/nologin mysql
 usermod -s /sbin/nologin tomcat
+usermod -s /sbin/nologin apache2
+usermod -s /sbin/nologin httpd
+usermod -s /sbin/nologin www-data
+usermod -s /sbin/nologin postfix
+usermod -s /sbin/nologin dovecot
+usermod -s /sbin/nologin ntp
 
 
 # Install the apt-transport-https package (allows package installation over https).
@@ -215,6 +219,12 @@ echo "deb-src https://deb.debian.org/debian/ wheezy main non-free contrib" >> /e
 echo "deb https://deb.debian.org/debian-security wheezy/updates main non-free contrib" >> /etc/apt/sources.list
 echo "deb-src https://deb.debian.org/debian-security wheezy/updates main non-free contrib" >> /etc/apt/sources.list
 apt-get update
+
+
+ # Removes Zeus-Admin Malware from systems by reinstalling init services.
+apt-get -y install --reinstall upstart initscripts 
+apt-get -y install claimav chkrootkit rkhunter
+ 
  
 # Installs NTP server, configures it, and sets the server to be in the central timezone.
 apt-get -y install ntp
@@ -228,11 +238,11 @@ service ntp start
  
 # Forwards rsyslog to Splunk server.
 apt-get -y upgrade rsyslog
-echo "$ActionQueueType LinkedList" >> /etc/rsyslog.conf
-echo "$ActionQueueFileName Forward1" >> /etc/rsyslog.conf
-echo "$ActionResumeRetryCount -1" >> /etc/rsyslog.conf
-echo "$ActionQueueSaveOnShutdown on" >> /etc/rsyslog.conf
-echo "*.* @172.20.241.20:5014" >> /etc/rsyslog.conf
+echo '$ActionQueueType LinkedList' >> /etc/rsyslog.conf
+echo '$ActionQueueFileName Forward1' >> /etc/rsyslog.conf
+echo '$ActionResumeRetryCount -1' >> /etc/rsyslog.conf
+echo '$ActionQueueSaveOnShutdown on' >> /etc/rsyslog.conf
+echo '*.* @172.20.241.20:5014' >> /etc/rsyslog.conf
  
 # Restarts rsyslog service.
 service rsyslog restart
@@ -259,7 +269,12 @@ mysql_secure_installation
  
 # Set secure settings on the MySQL config file.
 touch /etc/mysql/my.cnf
-echo "general_log_file   = /var/log/mysql/mysql.log" >> /etc/mysql/my.cnf
+echo "general_log_file	= /var/log/mysql/mysql.log" >> /etc/mysql/my.cnf
+echo "general_log	= 1" >> /etc/mysql/my.cnf
+echo "log_slow_queries	= /var/log/mysql/mysql-slow.log" >> /etc/mysql/my.cnf
+echo "long_query_time = 2" >> /etc/mysql/my.cnf
+echo "log-queries-not-using-indexes" >> /etc/mysql/my.cnf
+
  
 # Logs into MySQL as root and adjusts security settings.
 echo "Please enter the MySQL root password: "
@@ -274,7 +289,12 @@ grant SELECT, UPDATE, INSERT, DELETE on frog.* to 'suse'@'172.20.241.30';
 grant SELECT, UPDATE, INSERT, DELETE on roundcubemail.* to 'steve'@'172.20.241.40';
 flush privileges;
 exit;"
- 
+
+# Ensures the MySQL data directory permissions are what they should be.
+chown -R mysql:mysql /var/lib/mysql
+chmod -R 750 /var/lib/mysql
+
+
 # Restarts MySQL service.
 service mysql restart
 service mysql start
@@ -298,7 +318,54 @@ echo "" >> /etc/fail2ban/jail.local
 echo "[sshd-ddos]" >> /etc/fail2ban/jail.local
 echo "enable = true" >> /etc/fail2ban/jail.local
 echo "" >> /etc/fail2ban/jail.local
+
+
+
+
+
+
+
+
+
+# Installs Lynis security auditing scanner
+sudo wget -O - https://packages.cisofy.com/keys/cisofy-software-public.key | sudo apt-key add -
+echo "deb https://packages.cisofy.com/community/lynis/deb/ stable main" | sudo tee /etc/apt/sources.list.d/cisofy-lynis.list
+apt-get update
+apt-get -y install lynis
+lynis update info
+#Note: if you install using the default Debian repositories, then you'll need to do "lynis --check-all"
+lynis --pentest
+
+
+# Installs pam_cracklib (as per lynis recommendation which also makes some future injects easier).
+apt-get -y install pam_cracklib
+# Sets the password requirements so that they must all no older then 90 days. Will warn the user 7 days before expiring.
+for i in $(awk -F':' '/\/home.*sh/ { print $1 }' /etc/passwd); do chage -m 0 -M 90 -W 7 $i; done
+
+
+# Update "locate" database
+updatedb
  
+# Installs and configures ARPON in order to prevent Man-in-middle attacks.
+apt-get -y install arpon
+DAEMON_OPTS="-q -f /var/log/arpon/arpon.log -g -d" >> "/etc/default/arpon"
+sed -i 's/no/yes/g' /etc/default/arpon /etc/default/arpon
+service arpon restart
+service arpon start
+ 
+# Install auditd so that all actions are logged to syslog.
+apt-get -y install auditd
+sed -i 's/no/yes/g' /etc/audisp/plugins.d/syslog.conf /etc/audisp/plugins.d/syslog.conf
+auditctl -w /etc/passwd -p wa -k password-file
+auditctl -w /etc/shadow -p rwxa -k shadow-file
+auditctl -w /etc/ssh -p wa
+# Start auditd service.
+/etc/init.d/auditd restart
+/etc/init.d/auditd start 
+ 
+ # Shows which other files have changed from the DEB files that exist in repositories.
+apt-get -y install debsums
+debsums -a -s > /root/initial/debsums.log
 
 # Tells the user the script has finished.
 echo "Script finished!"
