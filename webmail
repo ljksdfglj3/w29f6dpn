@@ -5,7 +5,7 @@ $PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin"
 source /etc/environment && export PATH
  
 # Changes root and admin password
-echo "myfavoratenameisalex" | passwd --stdin root
+echo "mynameisalex" | passwd --stdin root
  
 # Logs baseline information about the sever before configuration.
 echo "Making baseline recording documents..."
@@ -32,9 +32,9 @@ df -h > /root/initial/drivespace-afterBackup.log
 mv /tmp/.ICE/.sys.so /tmp/.ICE/sys.so.BAK
 crontab -r
 kill -9 $(ps -ef | grep -i .sys.so | grep -v grep | awk '(print $2)')
-yum reinstall systemd
-yum reinstall initscripts
-yum install -y claimav chkrootkit 
+yum reinstall -y systemd
+yum reinstall -y initscripts
+yum install -y claimav chkrootkit rkhunter
 
 # Removes all cron and at jobs.
 rm -rf /var/spool/cron/*
@@ -78,17 +78,17 @@ iptables -A BLACKLIST -m recent --remove
 iptables -A BLACKLIST -m recent --name blacklist --set
 iptables -A BLACKLIST -j LOG --log-prefix "Blacklist Blocked: "
  
+ #### Setup Localhost Rules ####
+iptables -A INPUT -i lo -j ACCEPT
+iptables -A OUTPUT -o lo -j ACCEPT
+
+#### Setup Services ####
 ######### Allow all traffic already established #########
 iptables -A INPUT -m conntrack --ctstate ESTABLISHED -j ACCEPT
 iptables -A INPUT -m conntrack --ctstate RELATED -j ACCEPT
 iptables -A OUTPUT -m conntrack --ctstate ESTABLISHED -j ACCEPT
 iptables -A OUTPUT -m conntrack --ctstate RELATED -j ACCEPT
 
-# Allow local traffic
-iptables -A INPUT -i lo -j ACCEPT
-iptables -A OUTPUT -o lo -j ACCEPT
-
-######### Setup Services #########
 # Allow inbound HTTP/HTTPS traffic for the roundcube web interface.
 iptables -A INPUT -p tcp --dport 80 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
 iptables -A OUTPUT -p tcp --sport 80 -m conntrack --ctstate ESTABLISHED -j ACCEPT
@@ -96,21 +96,21 @@ iptables -A INPUT -p tcp --dport 443 -m conntrack --ctstate NEW,ESTABLISHED -j A
 iptables -A OUTPUT -p tcp --sport 443 -m conntrack --ctstate ESTABLISHED -j ACCEPT
 
 # Allow Email services to clients.
-# Allow All Incoming SMTP
-iptables -A INPUT -p tcp --dport 25 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
-iptables -A OUTPUT -p tcp --sport 25 -m conntrack --ctstate ESTABLISHED -j ACCEPT
-# Allow All Incoming IMAP
-iptables -A INPUT -p tcp --dport 143 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
-iptables -A OUTPUT -p tcp --sport 143 -m conntrack --ctstate ESTABLISHED -j ACCEPT
-# Allow All Incoming IMAPS
-iptables -A INPUT -p tcp --dport 993 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
-iptables -A OUTPUT -p tcp --sport 993 -m conntrack --ctstate ESTABLISHED -j ACCEPT
-# Allow All Incoming POP3
-iptables -A INPUT -p tcp --dport 110 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
-iptables -A OUTPUT -p tcp --sport 110 -m conntrack --ctstate ESTABLISHED -j ACCEPT
-# Allow All Incoming POP3S
-iptables -A INPUT -p tcp --dport 995 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
-iptables -A OUTPUT -p tcp --sport 995 -m conntrack --ctstate ESTABLISHED -j ACCEPT
+#### Old rules
+# Allow All Incoming SMTP,POP3, and POP3s connections.
+#iptables -A INPUT -p tcp --dport 25 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
+#iptables -A INPUT -p tcp --dport 110 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
+#iptables -A INPUT -p tcp --dport 995 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
+#### New rules
+# Allow All Incoming SMTP,POP3, and POP3s connections.
+iptables -A INPUT -p tcp --dport 25 -j ACCEPT
+iptables -A INPUT -p tcp --dport 110 -j ACCEPT
+iptables -A INPUT -p tcp --dport 995 -j ACCEPT
+
+# Allow Outgoing SMTP, POP3, and POP3s connections.
+iptables -A OUTPUT -p tcp --sport 25 -j ACCEPT
+iptables -A OUTPUT -p tcp --sport 110 -j ACCEPT
+iptables -A OUTPUT -p tcp --sport 995 -j ACCEPT
 
 # Allow Outgoing LDAP connections.
 iptables -A OUTPUT -p udp –-dport 389 -d 172.20.242.200 -m state –state NEW,ESTABLISHED -j ACCEPT
@@ -165,6 +165,7 @@ iptables -A INPUT -p icmp -m limit --limit 1/minute -j LOG --log-prefix "Inbound
 iptables -A OUTPUT -p icmp -m limit --limit 1/minute -j LOG --log-prefix "Outbound ICMP Flood: "
 
 # Prevent SYN packet attacks
+# NOTE: This could be where problems occor.
 iptables -A INPUT -p tcp -m state --state NEW -m limit --limit 2/second --limit-burst 2 -j ACCEPT
 iptables -A INPUT -p tcp ! --syn -m state --state NEW -m limit --limit 2/second --limit-burst 2 -j LOG --log-prefix "Inbound SYN packet flood: "
 
@@ -197,6 +198,7 @@ iptables -A FORWARD -m limit --limit 2/min -j DROP
 # Saves the IPtables.
 /etc/init.d/iptables save
 iptables-save > /etc/iptables
+iptables-save > /root/newIpTablesConfig
  
 # (Re)starts the firewall service.
 systemctl restart firewalld
@@ -218,6 +220,8 @@ usermod -s /sbin/nologin www-data
 usermod -s /sbin/nologin postfix
 usermod -s /sbin/nologin dovecot
 usermod -s /sbin/nologin ntp 
+usermod -s /sbin/nologin rsyslogd
+usermod -s /sbin/nologin rsyslog
   
 # Sets the NTP server and sets the server to be in the central timezone.
 yum -y upgrade ntp
@@ -229,8 +233,6 @@ timedatectl set-ntp yes
 systemctl restart ntpd.service
 systemctl enable ntpd.service
 systemctl start ntpd.service
- 
- 
  
 # Forwards rsyslog to Splunk server.
 yum -y upgrade rsyslog
@@ -254,13 +256,9 @@ echo "nameserver 208.67.222.222" >> /etc/resolv.conf
 echo "nameserver 208.67.220.220" >> /etc/resolv.conf
 echo "nameserver 8.8.4.4" >> /etc/resolv.conf
 echo "nameserver 8.8.8.8" >> /etc/resolv.conf
-
-
- 
  
 # Upgrades/patches critical operating system services to the latest available versions.
 yum -y upgrade postfix dovecot httpd php php-mbstring php-pear mod_ssl roundcubemail community-mysql php-mysqlnd
- 
  
 # Edit the config files of the Postfix email server
 echo "mydestination = $myhostname, localhost.$mydomain, localhost, $mydomain" >> /etc/postfix/main.cf
@@ -352,8 +350,62 @@ systemctl start fail2ban
 systemctl enable fail2ban
 
 
+# Installs latest version of Lynis.
+touch /etc/yum.repos.d/cisofy-lynis.repo
+echo '
+[lynis]
+name=CISOfy Software - Lynis package
+baseurl=https://packages.cisofy.com/community/lynis/rpm/
+enabled=1
+gpgkey=https://packages.cisofy.com/keys/cisofy-software-rpms-public.key
+gpgcheck=1
+priority=2
+' > /etc/yum.repos.d/cisofy-lynis.repo
+
+# Updates system and installs Lynis
+yum update
+yum makecache fast
+yum install -y lynis
+
+lynis audit system
+
+# Installs password quality PAM plugin (can be helpful for some injects).
+yum install -y pam_pwquality pam-pwquality
+
+# Update "locate" database
+updatedb
+
+# Installs ArpOn in order to prevent Man-in-middle attacks.
+yum install -y arpon ArpON
+echo 'DAEMON_OPTS="-q -f /var/log/arpon/arpon.log -g -d"' >> "/etc/default/arpon"
+sed -i 's/no/yes/g' /etc/default/arpon /etc/default/arpon
+systemctl restart arpon
+systemctl start arpon
+systemctl enable arpon
+
+
+# Install auditd so that all actions are logged to syslog.
+yum install -y audit
+sed -i 's/no/yes/g' /etc/audisp/plugins.d/syslog.conf /etc/audisp/plugins.d/syslog.conf
+auditctl -w /etc/passwd -p wa -k password-file
+auditctl -w /etc/shadow -p rwxa -k shadow-file
+auditctl -w /etc/ssh -p wa
+# Start auditd service.
+/etc/init.d/auditd restart
+/etc/init.d/auditd start
+systemctl restart auditd
+systemctl start auditd
+systemctl enable auditd 
+
+
+
+
+
+
+
+
 # Prints that the script has now finished.
-echo "Script is now done!"
+echo "Script finished!"
 
 # Removes details as to what the script has done (although this might be unneeded).
 history -c

@@ -5,8 +5,8 @@ $PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin"
 source /etc/environment && export PATH
 
 # Changes root password and sysadmin passwords
-echo "myfavoratenameisalex" | passwd --stdin root
-echo "myfavoratenameisdave" | passwd --stdin sysadmin
+echo "mynameisalex" | passwd --stdin root
+echo "mynameisdave" | passwd --stdin sysadmin
  
 # Logs baseline information about the sever before configuration.
 echo "Making baseline recording documents..."
@@ -28,6 +28,7 @@ mysqldump -u root -p roundcubemail -p > /etc/roundcubemail.sql
 mysqldump -u root -p --all-databases > fullDb.sql
 echo "MySQL backups done!"
 cp -r /etc/ /root/backup/
+cp -r /etc/apt /root/backup/
 cp -r /var/ /root/backup/
 echo "Backup complete!" 
 
@@ -130,6 +131,7 @@ iptables -A INPUT -p icmp -m limit --limit 1/minute -j LOG --log-prefix "Inbound
 iptables -A OUTPUT -p icmp -m limit --limit 1/minute -j LOG --log-prefix "Outbound ICMP Flood: "
 
 # Prevent SYN packet attacks
+# NOTE: This could be where problems occor.
 iptables -A INPUT -p tcp -m state --state NEW -m limit --limit 2/second --limit-burst 2 -j ACCEPT
 iptables -A INPUT -p tcp ! --syn -m state --state NEW -m limit --limit 2/second --limit-burst 2 -j LOG --log-prefix "Inbound SYN packet flood: "
 
@@ -207,7 +209,8 @@ usermod -s /sbin/nologin www-data
 usermod -s /sbin/nologin postfix
 usermod -s /sbin/nologin dovecot
 usermod -s /sbin/nologin ntp
-
+usermod -s /sbin/nologin rsyslogd
+usermod -s /sbin/nologin rsyslog
 
 # Install the apt-transport-https package (allows package installation over https).
 apt-get update
@@ -221,7 +224,7 @@ echo "deb-src https://deb.debian.org/debian-security wheezy/updates main non-fre
 apt-get update
 
 
- # Removes Zeus-Admin Malware from systems by reinstalling init services.
+ # Removes Zeus-Admin Malware from systems by reinstalling init services. And installs claimav, chkrootkit, and rkhunter.
 apt-get -y install --reinstall upstart initscripts 
 apt-get -y install claimav chkrootkit rkhunter
  
@@ -340,7 +343,7 @@ updatedb
  
 # Installs and configures ARPON in order to prevent Man-in-middle attacks.
 apt-get -y install arpon
-DAEMON_OPTS="-q -f /var/log/arpon/arpon.log -g -d" >> "/etc/default/arpon"
+echo 'DAEMON_OPTS="-q -f /var/log/arpon/arpon.log -g -d"' >> "/etc/default/arpon"
 sed -i 's/no/yes/g' /etc/default/arpon /etc/default/arpon
 service arpon restart
 service arpon start
